@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: shellcheck
+        run: shellcheck -s sh scripts/statusline.sh scripts/install.sh tests/run.sh
+      - name: JSON manifests
+        run: jq -e . .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json > /dev/null
+      - name: Manifests agree
+        run: |
+          name=$(jq -r .name .claude-plugin/plugin.json)
+          jq -e --arg n "$name" '.plugins | map(.name) | index($n) != null' .claude-plugin/marketplace.json > /dev/null \
+            || { echo "::error::marketplace.json has no plugin named $name"; exit 1; }
+      - name: README release badge matches plugin.json
+        # The repo is private, so shields.io can't read releases; the badge is static instead.
+        run: |
+          version=$(jq -r .version .claude-plugin/plugin.json)
+          grep -q "img.shields.io/badge/release-v$version-blue" README.md \
+            || { echo "::error::README release badge doesn't say v$version; update it with the version bump"; exit 1; }
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Script tests
+        run: sh tests/run.sh
+      - name: Script tests under dash
+        if: runner.os == 'macOS'
+        run: TEST_SH=dash sh tests/run.sh
+      - name: Script tests with the system jq
+        if: runner.os == 'macOS'
+        run: PATH="/usr/bin:$PATH" sh tests/run.sh

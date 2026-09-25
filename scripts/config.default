@@ -1,0 +1,24 @@
+# claude-statusline options (sh syntax). Changes show on the next status line refresh.
+# Delete or comment out a line to use its default.
+
+# Session ID at the end of line 1: full, short (first 8 characters) or off.
+SESSION_ID=short
+
+# Branch, "*" for uncommitted changes to tracked files, "↑N" for commits not pushed yet: on or off.
+GIT=on
+
+# "handoff 2h": age of the handoff note for this repo and branch (the handoff plugin): on or off.
+HANDOFF=on
+
+# Past this many thousand tokens of context, show a red "→ /handoff:handoff". 0 turns it off.
+HANDOFF_HINT_K=700
+HANDOFF_HINT=/handoff:handoff
+
+# 📱 when `adb devices` lists a connected Android device: on or off.
+ADB=off
+
+# Show the 5-hour reset time once 5-hour usage reaches this percentage (0 = always).
+RESET_5H_FROM=50
+
+# File to write a plan usage snapshot to, for the usage-guard plugin. Empty turns it off.
+SNAPSHOT="$HOME/.cache/claude-usage-guard/usage.json"

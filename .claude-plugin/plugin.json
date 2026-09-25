@@ -1,0 +1,13 @@
+{
+  "name": "statusline",
+  "version": "0.1.0",
+  "description": "A two-line status line: repo, branch, uncommitted/unpushed marks, handoff note age, model and session; context tokens with a handoff hint, and 5-hour/weekly plan usage with reset countdowns. Installed by /statusline:install.",
+  "author": {
+    "name": "Clumsyknight",
+    "email": "clusmsyknight@gmail.com"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/Clumsynite/claude-statusline",
+  "repository": "https://github.com/Clumsynite/claude-statusline",
+  "keywords": ["statusline", "status-line", "usage", "rate-limit", "context", "git", "handoff"]
+}

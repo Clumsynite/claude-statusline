@@ -1,0 +1,15 @@
+{
+  "name": "clumsyknight-statusline",
+  "owner": {
+    "name": "Clumsyknight",
+    "email": "clusmsyknight@gmail.com"
+  },
+  "description": "A two-line Claude Code status line with git state, context tokens and plan usage.",
+  "plugins": [
+    {
+      "name": "statusline",
+      "source": "./",
+      "description": "Two-line status line with git state, handoff age, context tokens and 5-hour/weekly plan usage."
+    }
+  ]
+}
