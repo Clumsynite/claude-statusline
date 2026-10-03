@@ -1,7 +1,8 @@
 #!/bin/sh
-# claude-statusline: a two-line Claude Code status line.
-#   line 1: repo (branch) * ↑N · handoff 2h 📱 | model | session
-#   line 2: ctx 31% · 312k → /handoff:handoff | 5h 55% (resets 05:38, in 2h13m) | 7d 91% (resets Wed 08:25, in 4d5h)
+# claude-statusline: a three-line Claude Code status line.
+#   line 1: repo · wt name (branch) * ↑N · handoff 2h 📱 | model
+#   line 2: ctx 31% · 312k → /handoff:handoff | cache 4m | 5h 55% (resets 05:38, in 2h13m) | 7d 91% (resets Wed 08:25, in 4d5h)
+#   line 3: name · session · 1h12m
 # Reads the status line JSON on stdin. Options live in $CLAUDE_CONFIG_DIR/statusline/config
 # (sh syntax, see config.default). Every part fails soft: a missing tool or odd input drops
 # that part, never the whole line.
@@ -15,11 +16,14 @@ command -v jq >/dev/null 2>&1 || {
 
 # Defaults; the config file overrides any of them.
 SESSION_ID=short         # full | short | off
+SESSION_NAME=on          # the name other sessions message this one by (ListAgents / SendMessage)
 GIT=on                   # branch, * uncommitted changes, ↑N unpushed commits
 HANDOFF=on               # age of the handoff note for this repo and branch
 HANDOFF_HINT_K=700       # past this many thousand context tokens, suggest HANDOFF_HINT; 0 = off
 HANDOFF_HINT=/handoff:handoff
 ADB=off                  # 📱 when `adb devices` lists a device
+CACHE=on                 # time until the prompt cache goes cold, or "cache cold"
+DURATION=on              # how long the session has been running
 RESET_5H_FROM=50         # show the 5-hour reset time once usage reaches this %
 SNAPSHOT="$HOME/.cache/claude-usage-guard/usage.json" # plan usage snapshot for usage-guard; empty = off
 
@@ -28,15 +32,17 @@ CONFIG=${CLAUDE_STATUSLINE_CONFIG:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/statuslin
 [ -f "$CONFIG" ] && . "$CONFIG"
 NOW=${CLAUDE_STATUSLINE_NOW:-$(date +%s)}
 
-dir='' model='' session='' ctx='' ctx_tokens='' five='' five_at='' week='' week_at='' has_rl=''
+dir='' wt='' model='' session='' title='' ctx='' ctx_tokens='' five='' five_at='' week='' week_at='' has_rl='' pc='' pc_at='' dur=''
 eval "$(printf '%s' "$input" | jq -r '
 	def pct: if type == "number" then (. + 0.5 | floor | tostring) else "" end;
 	def int: if type == "number" then (floor | tostring) else "" end;
 	(.context_window // {}) as $c
 	| ($c.current_usage // null) as $u
 	| @sh "dir=\(.workspace.current_dir // .cwd // "")",
+	  @sh "wt=\(.worktree.name // .workspace.git_worktree // "")",
 	  @sh "model=\(.model.display_name // "")",
 	  @sh "session=\(.session_id // "")",
+	  @sh "title=\(.session_name // "")",
 	  @sh "ctx=\($c.used_percentage | pct)",
 	  @sh "ctx_tokens=\(
 		if ($u | type) == "object" then
@@ -48,6 +54,9 @@ eval "$(printf '%s' "$input" | jq -r '
 	  @sh "five_at=\(.rate_limits.five_hour.resets_at | int)",
 	  @sh "week=\(.rate_limits.seven_day.used_percentage | pct)",
 	  @sh "week_at=\(.rate_limits.seven_day.resets_at | int)",
+	  @sh "pc=\(if .prompt_cache.caching_observed == true then (if .prompt_cache.warm == true then "warm" else "cold" end) else "" end)",
+	  @sh "pc_at=\(.prompt_cache.expires_at | int)",
+	  @sh "dur=\(if (.cost.total_duration_ms | type) == "number" then (.cost.total_duration_ms / 1000 | floor | tostring) else "" end)",
 	  @sh "has_rl=\(if (.rate_limits | type) == "object" then "1" else "" end)"
 ' 2>/dev/null)"
 
@@ -97,7 +106,7 @@ reset() {
 num() { case $1 in '' | *[!0-9]*) return 1 ;; esac; }
 
 # Git state and the handoff note, both from the session's working directory.
-branch='' mark='' note=''
+branch='' mark='' note='' main=''
 if [ -n "$dir" ] && { [ "$GIT" != off ] || [ "$HANDOFF" != off ]; } &&
 	command -v git >/dev/null 2>&1 && cd "$dir" 2>/dev/null &&
 	common=$(git --no-optional-locks rev-parse --git-common-dir 2>/dev/null); then
@@ -108,9 +117,9 @@ if [ -n "$dir" ] && { [ "$GIT" != off ] || [ "$HANDOFF" != off ]; } &&
 		ahead=$(git --no-optional-locks rev-list --count '@{u}..HEAD' 2>/dev/null)
 		num "$ahead" && [ "$ahead" -gt 0 ] && mark="${mark:+$mark }↑$ahead"
 	fi
+	main=$(cd "$common/.." 2>/dev/null && pwd -P)
 	if [ "$HANDOFF" != off ]; then
 		# Same layout as the handoff plugin: <main worktree, / -> -> / <branch, / -> +>.md
-		main=$(cd "$common/.." 2>/dev/null && pwd -P)
 		if [ -n "$branch" ]; then
 			slug=$(printf '%s' "$branch" | sed 's#/#+#g')
 		else
@@ -131,6 +140,20 @@ if [ -n "$dir" ] && { [ "$GIT" != off ] || [ "$HANDOFF" != off ]; } &&
 	[ "$GIT" != off ] || branch=
 fi
 
+# The session name lives in sessions/<pid>.json, not the status line input, whose session_name
+# is the /rename or AI-generated title. After a resume, the newest file for the ID wins.
+name=
+if [ "$SESSION_NAME" != off ] && [ -n "$session" ]; then
+	best='' bt=-1
+	for f in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/sessions/*.json; do
+		grep -qF "\"sessionId\":\"$session\"" "$f" 2>/dev/null || continue
+		t=$(mtime "$f")
+		num "$t" && [ "$t" -gt "$bt" ] && best=$f bt=$t
+	done
+	[ -n "$best" ] && name=$(jq -r '.name // empty' "$best" 2>/dev/null)
+	[ -n "$name" ] || name=$title
+fi
+
 # Phone connected: adb is slow, so read a cached device list that a detached refresh keeps under 30s old.
 phone=
 if [ "$ADB" = on ] && command -v adb >/dev/null 2>&1; then
@@ -146,16 +169,16 @@ fi
 
 line1=
 [ -n "$dir" ] && line1=$(col 36 "$(basename "$dir")")
+# In a worktree the folder is usually named after it, so lead with the main repo instead.
+if [ -n "$wt" ]; then
+	[ -n "$main" ] && [ "$(basename "$dir")" = "$wt" ] && line1=$(col 36 "$(basename "$main")")
+	line1="${line1:+$line1 · }wt $(col 33 "$wt")"
+fi
 [ -n "$branch" ] && line1="$line1 ($(col 35 "$branch"))"
 [ -n "$mark" ] && line1="$line1 $(col 33 "$mark")"
 [ -n "$note" ] && line1="$line1 · handoff $note"
 [ -n "$phone" ] && line1="$line1 $phone"
 [ -n "$model" ] && line1="${line1:+$line1 | }$model"
-case $SESSION_ID in
-full) [ -n "$session" ] && line1="${line1:+$line1 | }$session" ;;
-short) [ -n "$session" ] && line1="${line1:+$line1 | }${session%%-*}" ;;
-esac
-
 line2=
 add() { line2="${line2:+$line2 | }$1"; }
 if [ -n "$ctx" ] || [ -n "$ctx_tokens" ]; then
@@ -167,6 +190,20 @@ if [ -n "$ctx" ] || [ -n "$ctx_tokens" ]; then
 			c="$c $(col 31 "→ $HANDOFF_HINT")"
 	fi
 	add "$c"
+fi
+# Prompt cache: minutes until it goes cold (yellow in the last 2), red once it has.
+if [ "$CACHE" != off ] && [ -n "$pc" ]; then
+	left=
+	[ "$pc" = warm ] && num "$pc_at" && left=$((pc_at - NOW))
+	if [ -z "$left" ] || [ "$left" -le 0 ]; then
+		add "cache $(col 31 cold)"
+	elif [ "$left" -lt 60 ]; then
+		add "cache $(col 33 '<1m')"
+	elif [ "$left" -le 120 ]; then
+		add "cache $(col 33 "$(span "$left")")"
+	else
+		add "cache $(col 32 "$(span "$left")")"
+	fi
 fi
 if [ -n "$five" ]; then
 	c="5h $(cpct "$five")"
@@ -184,10 +221,22 @@ if [ -n "$week" ]; then
 	fi
 	add "$c"
 fi
+# Line 3: session name, ID and how long it has run.
+sid=
+case $SESSION_ID in
+full) sid=$session ;;
+short) sid=${session%%-*} ;;
+esac
+line3=$sid
+[ -n "$name" ] && line3="$(col 34 "$name")${sid:+ · $sid}"
+[ "$DURATION" != off ] && num "$dur" && line3="${line3:+$line3 · }$(span "$dur")"
 
-if [ -n "$line1" ] && [ -n "$line2" ]; then
-	printf '%s%s%s\n%s%s%s' "$DIM" "$line1" "$RST" "$DIM" "$line2" "$RST"
-elif [ -n "$line1$line2" ]; then
-	printf '%s%s%s' "$DIM" "$line1$line2" "$RST"
-fi
+# Print the non-empty lines, each dimmed.
+sep=
+for l in "$line1" "$line2" "$line3"; do
+	[ -n "$l" ] || continue
+	printf '%s%s%s%s' "$sep" "$DIM" "$l" "$RST"
+	sep='
+'
+done
 exit 0
