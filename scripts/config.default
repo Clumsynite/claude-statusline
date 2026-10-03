@@ -1,8 +1,11 @@
 # claude-statusline options (sh syntax). Changes show on the next status line refresh.
 # Delete or comment out a line to use its default.
 
-# Session ID at the end of line 1: full, short (first 8 characters) or off.
+# Session ID at the end of the last line: full, short (first 8 characters) or off.
 SESSION_ID=short
+
+# Session name before the ID (e.g. statusline-ff), the name other sessions message this one by: on or off.
+SESSION_NAME=on
 
 # Branch, "*" for uncommitted changes to tracked files, "↑N" for commits not pushed yet: on or off.
 GIT=on
@@ -16,6 +19,13 @@ HANDOFF_HINT=/handoff:handoff
 
 # 📱 when `adb devices` lists a connected Android device: on or off.
 ADB=off
+
+# "cache 4m": time until the prompt cache goes cold (yellow in the last 2 minutes), "cache cold" once it has: on or off.
+# A message after it goes cold re-sends the whole context at full price.
+CACHE=on
+
+# How long the session has been running, at the end of line 3: on or off.
+DURATION=on
 
 # Show the 5-hour reset time once 5-hour usage reaches this percentage (0 = always).
 RESET_5H_FROM=50

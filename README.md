@@ -5,23 +5,29 @@
 [![Latest release](https://img.shields.io/badge/release-v0.1.0-blue)](https://github.com/Clumsynite/claude-statusline/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A two-line status line for Claude Code, packaged as a plugin with an install command.
+A three-line status line for Claude Code, packaged as a plugin with an install command.
 
 ```
-my-app (feat/login) * ↑2 · handoff 2h | Opus | 1aaf2147
-ctx 72% · 724k → /handoff:handoff | 5h 55% (resets 05:38, in 2h13m) | 7d 91% (resets Wed 08:25, in 4d5h)
+my-app (feat/login) * ↑2 · handoff 2h | Opus
+ctx 72% · 724k → /handoff:handoff | cache 4m | 5h 55% (resets 05:38, in 2h13m) | 7d 91% (resets Wed 08:25, in 4d5h)
+my-app-3f · 1aaf2147 · 1h12m
 ```
 
 **Line 1**
 - Repo folder (cyan) and branch (magenta), or the short SHA on a detached HEAD.
+- `wt feat-x` (yellow): the worktree, in a `--worktree` session or a linked git worktree. The main repo's name leads when the folder is named after the worktree.
 - `*` (yellow): tracked files have uncommitted changes. `↑N`: N commits not pushed to the upstream yet.
 - `handoff 2h`: age of the note for this repo and branch written by the [handoff](https://github.com/Clumsynite/claude-handoff) plugin.
 - `📱`: `adb devices` lists a connected Android device (off by default).
-- Model, then the session ID (first 8 characters by default, or the full ID to copy into other sessions).
+- Model.
 
 **Line 2**
 - `ctx`: context used, as a percentage and in tokens. Past 700k tokens a red `→ /handoff:handoff` suggests writing a handoff note and starting fresh.
+- `cache 4m`: time until the prompt cache goes cold, yellow in the last 2 minutes, then a red `cache cold`. A message after that re-sends the whole context at full price.
 - `5h` and `7d`: plan usage, green under 50%, yellow under 80%, red from 80%. The weekly reset always shows with the time left; the 5-hour reset shows once usage reaches 50%.
+
+**Line 3**
+- The session name (blue), ID and how long the session has run. The name, e.g. `my-app-3f`, is what other sessions use to message this one (`ListAgents` / `SendMessage`). The status line input doesn't carry it (its `session_name` is the `/rename` or AI-generated title), so the name is read from `~/.claude/sessions/<pid>.json`, falling back to that title. The ID shows its first 8 characters by default, or the full ID to copy into other sessions.
 
 It also writes a small plan usage snapshot, so [usage-guard](https://github.com/Clumsynite/claude-usage-guard) works with no extra setup.
 
@@ -51,10 +57,13 @@ Edit `~/.claude/statusline/config` (sh syntax). Changes show on the next refresh
 | Option | Default | Meaning |
 |---|---|---|
 | `SESSION_ID` | `short` | `full`, `short` (first 8 characters) or `off` |
+| `SESSION_NAME` | `on` | Session name before the ID; falls back to the `/rename` or AI-generated title |
+| `DURATION` | `on` | How long the session has run, at the end of line 3 |
 | `GIT` | `on` | Branch, `*` and `↑N` |
 | `HANDOFF` | `on` | Handoff note age |
 | `HANDOFF_HINT_K` | `700` | Show the hint past this many thousand context tokens; `0` turns it off |
 | `HANDOFF_HINT` | `/handoff:handoff` | What the hint suggests, e.g. `/compact` if you don't use handoff |
+| `CACHE` | `on` | Time until the prompt cache goes cold |
 | `ADB` | `off` | `📱` when an Android device is connected (checked in the background every 30 seconds) |
 | `RESET_5H_FROM` | `50` | Show the 5-hour reset time from this usage %; `0` always shows it |
 | `SNAPSHOT` | `$HOME/.cache/claude-usage-guard/usage.json` | Where to write the plan usage snapshot; empty turns it off |

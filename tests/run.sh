@@ -64,8 +64,9 @@ eq "empty object prints nothing" "$RAW" ""
 
 echo "# statusline.sh: outside git"
 run "$(js "$WORK/plain")"
-eq "line 1 outside git" "$(printf '%s\n' "$OUT" | sed -n 1p)" "plain | Opus | 1aaf2147"
+eq "line 1 outside git" "$(printf '%s\n' "$OUT" | sed -n 1p)" "plain | Opus"
 eq "line 2" "$(printf '%s\n' "$OUT" | sed -n 2p)" "ctx 30% · 304k | 5h 55% (resets 23:41, in 2h13m) | 7d 91% (resets Wed 02:35, in 4d5h)"
+eq "line 3" "$(printf '%s\n' "$OUT" | sed -n 3p)" "1aaf2147"
 has "5h 55% is yellow" "$RAW" "$ESC\[0;33m55%"
 has "7d 91% is red" "$RAW" "$ESC\[0;31m91%"
 has "ctx 30% is green" "$RAW" "$ESC\[0;32m30%"
@@ -96,10 +97,10 @@ eq "single line when only usage is known" "$OUT" "7d 10%"
 echo "# statusline.sh: config"
 setconf SESSION_ID=full
 run "$(js "$WORK/plain")"
-has "SESSION_ID=full" "$OUT" "\| 1aaf2147-91f9-48d6-aa23-caa0ebac765e$"
+has "SESSION_ID=full" "$OUT" "^1aaf2147-91f9-48d6-aa23-caa0ebac765e$"
 setconf SESSION_ID=off
 run "$(js "$WORK/plain")"
-eq "SESSION_ID=off" "$(printf '%s\n' "$OUT" | sed -n 1p)" "plain | Opus"
+hasnt "SESSION_ID=off" "$OUT" "1aaf2147"
 setconf HANDOFF_HINT_K=0
 run "$(js "$WORK/plain" '.context_window.current_usage.cache_read_input_tokens = 900000')"
 hasnt "HANDOFF_HINT_K=0 turns the hint off" "$OUT" "→"
@@ -112,6 +113,64 @@ has "RESET_5H_FROM=0 always shows the reset" "$OUT" "5h 5% \(resets 23:41"
 setconf HANDOFF_HINT_K=abc RESET_5H_FROM=x
 run "$(js "$WORK/plain" '.context_window.current_usage.cache_read_input_tokens = 900000')"
 eq "bad numbers in config are ignored quietly" "$(printf '%s\n' "$OUT" | sed -n 2p)" "ctx 30% · 905k | 5h 55% | 7d 91% (resets Wed 02:35, in 4d5h)"
+: >"$CONF"
+
+echo "# statusline.sh: session name"
+SD="$HOME/.claude/sessions"
+mkdir -p "$SD"
+printf '{"pid":1,"sessionId":"other","name":"wrong-1"}' >"$SD/1.json"
+run "$(js "$WORK/plain")"
+has "no session file: ID only" "$OUT" "^1aaf2147$"
+run "$(js "$WORK/plain" '.session_name = "my title"')"
+has "falls back to the /rename title" "$OUT" "^my title · 1aaf2147$"
+printf '{"pid":2,"sessionId":"1aaf2147-91f9-48d6-aa23-caa0ebac765e","name":"old-2"}' >"$SD/2.json"
+touch -t 202601010000 "$SD/2.json"
+printf '{"pid":3,"sessionId":"1aaf2147-91f9-48d6-aa23-caa0ebac765e","name":"plain-3f"}' >"$SD/3.json"
+run "$(js "$WORK/plain" '.session_name = "my title"')"
+has "name from the newest session file" "$OUT" "^plain-3f · 1aaf2147$"
+has "name is blue, ID last" "$RAW" "$ESC\[0;34mplain-3f"
+setconf SESSION_ID=off
+run "$(js "$WORK/plain")"
+has "name without the ID" "$OUT" "^plain-3f$"
+setconf SESSION_NAME=off
+run "$(js "$WORK/plain")"
+has "SESSION_NAME=off" "$OUT" "^1aaf2147$"
+rm -rf "$SD"
+: >"$CONF"
+
+echo "# statusline.sh: prompt cache and duration"
+mkdir -p "$WORK/bin"
+printf '#!/bin/sh\nprintf "List of devices attached\\nABC123\\tdevice\\n"\n' >"$WORK/bin/adb"
+chmod +x "$WORK/bin/adb"
+pc() { js "$WORK/plain" ".prompt_cache = {caching_observed: true, warm: $1, expires_at: $2}"; }
+run "$(pc true $((NOW + 250)))"
+has "cache time left" "$OUT" "^ctx 30% · 304k \| cache 4m \| 5h"
+has "cache green with time to spare" "$RAW" "cache $ESC\[0;32m4m"
+run "$(pc true $((NOW + 100)))"
+has "cache yellow in the last 2 minutes" "$RAW" "cache $ESC\[0;33m1m"
+run "$(pc true $((NOW + 30)))"
+has "cache under a minute" "$OUT" "\| cache <1m \|"
+run "$(pc true $((NOW - 5)))"
+has "cache past expiry is cold" "$OUT" "\| cache cold \|"
+run "$(pc false null)"
+has "cache cold is red" "$RAW" "cache $ESC\[0;31mcold"
+run "$(js "$WORK/plain" '.prompt_cache = {caching_observed: false, warm: false}')"
+hasnt "nothing when caching is off" "$OUT" "cache"
+setconf ADB=on
+RAW=$(pc true $((NOW + 250)) | PATH="$WORK/bin:$PATH" "$SH" "$S")
+has "cache time survives ADB=on" "$RAW" "cache $ESC\[0;32m4m"
+setconf CACHE=off
+run "$(pc true $((NOW + 250)))"
+hasnt "CACHE=off" "$OUT" "cache"
+: >"$CONF"
+run "$(js "$WORK/plain" '.cost = {total_duration_ms: 4325000}')"
+eq "duration on line 3" "$(printf '%s\n' "$OUT" | sed -n 3p)" "1aaf2147 · 1h12m"
+setconf SESSION_ID=off
+run "$(js "$WORK/plain" '.cost = {total_duration_ms: 4325000}')"
+eq "duration alone" "$(printf '%s\n' "$OUT" | sed -n 3p)" "1h12m"
+setconf DURATION=off
+run "$(js "$WORK/plain" '.cost = {total_duration_ms: 4325000}')"
+hasnt "DURATION=off" "$OUT" "1h12m"
 : >"$CONF"
 
 echo "# statusline.sh: usage snapshot"
@@ -136,12 +195,12 @@ git init -q -b feat/x "$WORK/repo"
 (cd "$WORK/repo" && echo a >f && git add f && git commit -qm one && git remote add origin "$WORK/remote.git" &&
 	git push -q -u origin feat/x 2>/dev/null && echo b >g && git add g && git commit -qm two && git commit -qm three --allow-empty)
 run "$(js "$WORK/repo")"
-eq "branch and unpushed count" "$(printf '%s\n' "$OUT" | sed -n 1p)" "repo (feat/x) ↑2 | Opus | 1aaf2147"
+eq "branch and unpushed count" "$(printf '%s\n' "$OUT" | sed -n 1p)" "repo (feat/x) ↑2 | Opus"
 has "repo cyan, branch magenta" "$RAW" "$ESC\[0;36mrepo$ESC\[0;2m \($ESC\[0;35mfeat/x"
 echo c >>"$WORK/repo/f"
 mkdir -p "$WORK/repo/sub"
 run "$(js "$WORK/repo/sub")"
-eq "uncommitted mark, from a subdirectory" "$(printf '%s\n' "$OUT" | sed -n 1p)" "sub (feat/x) * ↑2 | Opus | 1aaf2147"
+eq "uncommitted mark, from a subdirectory" "$(printf '%s\n' "$OUT" | sed -n 1p)" "sub (feat/x) * ↑2 | Opus"
 
 ND="$HOME/.claude/handoffs/$(printf '%s' "$WORK/repo" | sed 's#/#-#g')"
 mkdir -p "$ND"
@@ -160,9 +219,18 @@ printf -- '---\ncreated_epoch: %s\n---\n' $((NOW - 3600)) >"$ND/other.md"
 run "$(js "$WORK/wt")"
 has "worktree uses the main repo's note folder" "$OUT" "^wt \(other\) · handoff 1h \|"
 
+run "$(js "$WORK/wt" '.worktree = {name: "wt", path: "x", branch: "other"}')"
+has "worktree session leads with the main repo" "$OUT" "^repo · wt wt \(other\) · handoff 1h \|"
+has "worktree name is yellow" "$RAW" "wt $ESC\[0;33mwt"
+run "$(js "$WORK/wt" '.workspace.git_worktree = "wt"')"
+has "git_worktree when there's no worktree session" "$OUT" "^repo · wt wt \(other\)"
+mkdir -p "$WORK/wt/sub"
+run "$(js "$WORK/wt/sub" '.workspace.git_worktree = "wt"')"
+has "subdirectory of a worktree keeps its own name" "$OUT" "^sub · wt wt \(other\)"
+
 setconf GIT=off
 run "$(js "$WORK/repo")"
-eq "GIT=off keeps the handoff age" "$(printf '%s\n' "$OUT" | sed -n 1p)" "repo · handoff 10m | Opus | 1aaf2147"
+eq "GIT=off keeps the handoff age" "$(printf '%s\n' "$OUT" | sed -n 1p)" "repo · handoff 10m | Opus"
 setconf HANDOFF=off
 run "$(js "$WORK/repo")"
 hasnt "HANDOFF=off" "$OUT" "handoff 10m"
@@ -175,9 +243,6 @@ run "$(js "$WORK/repo")"
 has "detached HEAD shows the sha and its note" "$OUT" "^repo \($sha\) \* · handoff 1m \|"
 
 echo "# statusline.sh: adb"
-mkdir -p "$WORK/bin"
-printf '#!/bin/sh\nprintf "List of devices attached\\nABC123\\tdevice\\n"\n' >"$WORK/bin/adb"
-chmod +x "$WORK/bin/adb"
 setconf ADB=on
 RAW=$(js "$WORK/plain" | PATH="$WORK/bin:$PATH" "$SH" "$S")
 sleep 1

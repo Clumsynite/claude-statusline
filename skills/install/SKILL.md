@@ -1,6 +1,6 @@
 ---
 name: install
-description: Install, update, check or remove the two-line claude-statusline status line (repo, branch, git state, handoff age, model, session; context tokens and 5-hour/weekly plan usage).
+description: Install, update, check or remove the three-line claude-statusline status line (repo, worktree, branch, git state, handoff age, model; context tokens and 5-hour/weekly plan usage; session name and ID).
 argument-hint: "[status | uninstall]"
 disable-model-invocation: true
 allowed-tools: Bash(sh "${CLAUDE_PLUGIN_ROOT}/scripts/install.sh" *)
