@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Clumsynite/claude-statusline/actions/workflows/ci.yml/badge.svg)](https://github.com/Clumsynite/claude-statusline/actions/workflows/ci.yml)
 [![Release](https://github.com/Clumsynite/claude-statusline/actions/workflows/release.yml/badge.svg)](https://github.com/Clumsynite/claude-statusline/actions/workflows/release.yml)
-[![Latest release](https://img.shields.io/badge/release-v0.1.0-blue)](https://github.com/Clumsynite/claude-statusline/releases/latest)
+[![Latest release](https://img.shields.io/badge/release-v0.2.0-blue)](https://github.com/Clumsynite/claude-statusline/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A three-line status line for Claude Code, packaged as a plugin with an install command.
