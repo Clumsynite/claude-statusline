@@ -46,7 +46,11 @@ A plugin can't set a status line by itself, so the plugin ships an install comma
 - `/statusline:install status`: what's installed, and which companion plugins are present.
 - `/statusline:install uninstall`: restores the status line you had before (or removes `statusLine`). The files in `~/.claude/statusline/` are kept.
 
-After a plugin update, a silent SessionStart hook refreshes the installed copy of the script. Customise it through the config file, not by editing the script, which gets overwritten.
+### Updates
+
+Plugins from third-party marketplaces don't auto-update unless you turn it on. Do that once: `/plugin` → **Marketplaces** → `clumsyknight-statusline` → **Enable auto-update**. New versions then download in the background when a session starts, and the next session uses them. To update by hand instead, pick **Update now** on the plugin in `/plugin` → **Installed**, or run `claude plugin update statusline@clumsyknight-statusline`.
+
+After an update, a silent SessionStart hook refreshes the installed copy of the script, so there's no need to run `/statusline:install` again. Your config file is left alone, and new options start at their defaults. Customise through the config file, not by editing the script, which gets overwritten.
 
 Needs `jq` and a POSIX `sh`. `git` and `adb` are optional. `CLAUDE_CONFIG_DIR` is honoured.
 
