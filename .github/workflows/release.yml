@@ -1,14 +1,19 @@
 name: Release
 
-# Releases are built by CI/CD: bump "version" in .claude-plugin/plugin.json and push to main.
-# When CI passes on that push, this creates the tag <name>--v<version> and a GitHub release
-# at the tested commit. If that release already exists, it does nothing.
+# After CI passes on main: releases an unreleased plugin.json version, or bumps and releases when a
+# commit since the last release says "release" (see .github/next-version.sh and the README).
 on:
   workflow_run:
     workflows: [CI]
     types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      bump:
+        description: Bump before releasing (none releases the current version if it has no release)
+        type: choice
+        options: [none, patch, minor, major]
+        default: none
 
 permissions:
   contents: read
@@ -28,11 +33,14 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      BUMP: ${{ inputs.bump || 'none' }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ env.SHA }}
-      - name: Read version
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Decide
         id: v
         run: |
           name=$(jq -r .name .claude-plugin/plugin.json)
@@ -41,14 +49,46 @@ jobs:
             || { echo "::error::plugin.json name '$name' is not kebab-case"; exit 1; }
           echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' \
             || { echo "::error::plugin.json version '$version' is not x.y.z"; exit 1; }
+          next=
+          if [ "$BUMP" != none ]; then
+            next=$(printf 'release %s\n' "$BUMP" | sh .github/next-version.sh "$version")
+          elif gh release view "$name--v$version" > /dev/null 2>&1; then
+            last=$(git describe --tags --abbrev=0 --match "$name--v*" "$SHA" 2>/dev/null || true)
+            next=$(git log --format=%B "${last:+$last..}$SHA" | sh .github/next-version.sh "$version")
+            if [ -z "$next" ]; then
+              echo "$name $version is released and no commit since ${last:-the start} asks for a release."
+              echo "skip=1" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo "Releasing $name ${next:-$version}${next:+ (bumped from $version)}."
           {
-            echo "tag=$name--v$version"
-            echo "title=$name $version"
+            echo "name=$name"
+            echo "version=${next:-$version}"
+            echo "bump=${next:+1}"
           } >> "$GITHUB_OUTPUT"
-      - name: Create the release if it doesn't exist
+      - name: Commit the version bump
+        if: steps.v.outputs.bump == '1'
         env:
-          TAG: ${{ steps.v.outputs.tag }}
-          TITLE: ${{ steps.v.outputs.title }}
+          VERSION: ${{ steps.v.outputs.version }}
+          BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
+        run: |
+          jq --arg v "$VERSION" '.version = $v' .claude-plugin/plugin.json > plugin.json.tmp
+          mv plugin.json.tmp .claude-plugin/plugin.json
+          sed -i -E "s#img.shields.io/badge/release-v[0-9.]+-blue#img.shields.io/badge/release-v$VERSION-blue#" README.md
+          grep -q "img.shields.io/badge/release-v$VERSION-blue" README.md \
+            || { echo "::error::README release badge not found"; exit 1; }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -qam "Version $VERSION"
+          git push origin "HEAD:refs/heads/$BRANCH" \
+            || { echo "::error::$BRANCH moved past $SHA; rerun this workflow on the newer commit"; exit 1; }
+          echo "SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Create the release if it doesn't exist
+        if: steps.v.outputs.skip != '1'
+        env:
+          TAG: ${{ steps.v.outputs.name }}--v${{ steps.v.outputs.version }}
+          TITLE: ${{ steps.v.outputs.name }} ${{ steps.v.outputs.version }}
         run: |
           if gh release view "$TAG" > /dev/null 2>&1; then
             echo "Release $TAG already exists; nothing to do."

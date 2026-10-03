@@ -1,5 +1,5 @@
 #!/bin/sh
-# Self-contained tests for scripts/statusline.sh and scripts/install.sh. Uses a throwaway HOME
+# Self-contained tests for scripts/statusline.sh, scripts/install.sh and .github/next-version.sh. Uses a throwaway HOME
 # and git repos; touches nothing else. Usage: sh tests/run.sh
 # Set TEST_SH=dash (or bash) to run the scripts under another /bin/sh.
 
@@ -7,6 +7,7 @@
 HERE=$(cd "$(dirname "$0")/.." && pwd -P)
 S="$HERE/scripts/statusline.sh"
 I="$HERE/scripts/install.sh"
+NV="$HERE/.github/next-version.sh"
 SH=${TEST_SH:-sh}
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/statusline-test.XXXXXX")
 WORK=$(cd "$WORK" && pwd -P)
@@ -314,6 +315,19 @@ mkdir -p "$CLAUDE_CONFIG_DIR"
 "$SH" "$I" install >/dev/null 2>&1
 has "CLAUDE_CONFIG_DIR is honoured" "$(jq -r .statusLine.command "$WORK/cfg/settings.json")" "$WORK/cfg/statusline/statusline.sh"
 unset CLAUDE_CONFIG_DIR
+
+echo "# next-version.sh"
+nv() { printf '%b' "$2" | "$SH" "$NV" "$1" 2>&1; }
+eq "no mention, no release" "$(nv 0.1.0 'Fix the cache timer\n')" ""
+eq "release means patch" "$(nv 0.1.0 'Fix the cache timer, release\n')" "0.1.1"
+eq "releasing, any case" "$(nv 0.1.9 'Releasing the fix\n')" "0.1.10"
+eq "release minor" "$(nv 0.1.3 'Add a cache timer\n\nRelease minor\n')" "0.2.0"
+eq "major release" "$(nv 1.4.2 'Drop line 3. Major release.\n')" "2.0.0"
+eq "highest level across commits" "$(nv 0.1.0 'a release minor\nb\nc release major\n')" "1.0.0"
+eq "minor on a line without release is ignored" "$(nv 0.1.0 'Minor tidy\n\nrelease\n')" "0.1.1"
+eq "releases, released and pre-release don't count" "$(nv 0.1.0 'Releases are built by CI\nreleased before\npre-release notes\n')" ""
+eq "release-notes doesn't count" "$(nv 0.1.0 'Update release-notes script\n')" ""
+has "bad version is refused" "$(nv v1 'release\n')" "not x.y.z"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

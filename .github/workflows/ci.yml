@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: shellcheck
-        run: shellcheck -s sh scripts/statusline.sh scripts/install.sh tests/run.sh
+        run: shellcheck -s sh scripts/statusline.sh scripts/install.sh tests/run.sh .github/next-version.sh
       - name: JSON manifests
         run: jq -e . .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json > /dev/null
       - name: Manifests agree

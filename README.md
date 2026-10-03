@@ -95,7 +95,11 @@ shellcheck -s sh scripts/*.sh tests/run.sh
 claude plugin validate --strict .claude-plugin/plugin.json
 ```
 
-Releases are built by CI: bump `version` in `.claude-plugin/plugin.json` (and the README badge) and push to `main`.
+Releases are built by CI once it passes on a push to `main`:
+
+- Say "release" or "releasing" in a commit message, e.g. `Release minor` on its own line. CI bumps the version in `.claude-plugin/plugin.json` and the README badge, commits that to `main`, then tags and publishes the release. `major`, `minor` or `patch` on the same line picks the bump; the default is patch. Every commit since the last release counts, and the highest bump wins. "releases", "released" and "pre-release" don't count.
+- Or bump `version` (and the badge) by hand; CI releases any version that has no release yet.
+- Or run the Release workflow from the Actions tab and pick a bump.
 
 ## License
 
